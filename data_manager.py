@@ -1,8 +1,11 @@
+import contextlib
+import fcntl
 import json
 import os
 from datetime import datetime
 
 DATA_FILE = os.path.expanduser("~/.legal_aid.json")
+LOCK_FILE = DATA_FILE + ".lock"
 
 LEGAL_TYPES = ["民事", "刑事", "劳动", "家事", "商事"]
 TIME_SLOTS = ["上午", "下午"]
@@ -98,3 +101,23 @@ def has_schedule(data, lawyer_id, date, slot):
         if s["lawyer_id"] == lawyer_id and s["date"] == date and s["slot"] == slot:
             return True
     return False
+
+
+@contextlib.contextmanager
+def transaction():
+    lock_fd = open(LOCK_FILE, "w")
+    commit = {"ok": False}
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        data = load_data()
+
+        def mark_commit():
+            commit["ok"] = True
+
+        yield data, mark_commit
+
+        if commit["ok"]:
+            save_data(data)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
